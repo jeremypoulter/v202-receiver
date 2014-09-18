@@ -91,10 +91,12 @@ void v202Protocol::init(nrf24l01p *wireless)
 uint8_t v202Protocol::run( rx_values_t *rx_value )
 {
   uint8_t returnValue = UNKNOWN;
+  static uint8_t errorCnt = 0;
   switch(mState)
   {
     case BOUND:
     {
+      unsigned long newTime = millis();
       returnValue = BOUND_NO_VALUES;
       if( mWireless->rxFlag() )
       {
@@ -107,6 +109,7 @@ uint8_t v202Protocol::run( rx_values_t *rx_value )
           {
             // a valid frame has been received
             incrementChannel = true;
+            errorCnt = 0;
             // Discard bind frame
             if( mFrame[14] != 0xc0 )
             {
@@ -123,7 +126,6 @@ uint8_t v202Protocol::run( rx_values_t *rx_value )
             }
           }
         }
-        
         if(incrementChannel)
         {
           mRfChNum++;
@@ -131,7 +133,26 @@ uint8_t v202Protocol::run( rx_values_t *rx_value )
             mRfChNum = 0;
           mWireless->switchFreq(mRfChannels[mRfChNum]);
         }
-      }
+      }       
+      else if(errorCnt == 0 && (newTime - mLastSignalTime) > 10)
+        {
+          errorCnt++;
+          mLastSignalTime = newTime;
+          mRfChNum++;
+          if( mRfChNum > 15) 
+            mRfChNum = 0;
+          mWireless->switchFreq(mRfChannels[mRfChNum]);
+        }
+        else if( errorCnt >= 1 && (newTime - mLastSignalTime) > 140)
+        {
+          mLastSignalTime = newTime;
+          mRfChNum++;
+          if( mRfChNum > 15) 
+            mRfChNum = 0;
+          mWireless->switchFreq(mRfChannels[mRfChNum]);
+          
+        }
+        
     }
     break;
     // Initial state
@@ -184,6 +205,8 @@ uint8_t v202Protocol::run( rx_values_t *rx_value )
     
     // Wait on the first frequency of TX
     case WAIT_FIRST_SYNCHRO:
+    {
+    unsigned long newTime = millis();
       returnValue = BIND_IN_PROGRESS;
       if( mWireless->rxFlag() )
       {
@@ -196,6 +219,7 @@ uint8_t v202Protocol::run( rx_values_t *rx_value )
           {
             incrementChannel = true;
             mState = BOUND;
+            mLastSignalTime = newTime;
           }
         }
         
@@ -209,6 +233,7 @@ uint8_t v202Protocol::run( rx_values_t *rx_value )
         }
       }
     break;
+  }
     // Not implement for the moment
     case SIGNAL_LOST:
       returnValue = BIND_IN_PROGRESS;
